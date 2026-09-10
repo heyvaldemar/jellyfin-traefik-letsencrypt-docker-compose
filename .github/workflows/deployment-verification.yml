@@ -1,0 +1,352 @@
+name: Deployment Verification
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+    # Daily rebuild: security patches should not wait for a weekly slot.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: deployment-verification-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  # Authenticated requests avoid the anonymous API rate limit that shared
+  # GitHub runners regularly hit (api.github.com answers 403 otherwise).
+  GH_API_TOKEN: ${{ github.token }}
+
+jobs:
+  lint:
+    name: Lint shell scripts and workflow YAML
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: ShellCheck
+        run: |
+          docker run --rm -v "$PWD:/mnt" -w /mnt \
+            koalaman/shellcheck-alpine:stable \
+            shellcheck ./*.sh
+
+      - name: actionlint (GitHub Actions workflow linting)
+        run: |
+          docker run --rm -v "$PWD:/mnt" -w /mnt \
+            rhysd/actionlint:1.7.12 \
+            -color
+
+  scan-trivy:
+    name: Scan pinned upstream image with Trivy
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Findings surface in the Security tab for triage; they don't block CI.
+    continue-on-error: true
+    permissions:
+      contents: read
+      security-events: write
+    strategy:
+      # Image refs are read from the compose file's x-images defaults at
+      # runtime — single source of truth.
+      fail-fast: false
+      matrix:
+        include:
+          - name: jellyfin
+            env_var: JELLYFIN_IMAGE_TAG
+          - name: backups
+            env_var: JELLYFIN_BACKUPS_IMAGE_TAG
+          - name: traefik
+            env_var: TRAEFIK_IMAGE_TAG
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read pinned ${{ matrix.name }} image from the compose file
+        id: pin
+        env:
+          ENV_VAR: ${{ matrix.env_var }}
+        run: |
+          image="$(grep -m1 -oE "\\$\\{${ENV_VAR}:-.*" jellyfin-traefik-letsencrypt-docker-compose.yml | sed -E -e ':a' -e 's/\$\{[A-Z0-9_]+:-([^{}]*)\}/\1/' -e 'ta')"
+          if [ -z "$image" ]; then
+            echo "${ENV_VAR} default not found in the compose x-images block" >&2
+            exit 1
+          fi
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Trivy scan of ${{ matrix.name }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ steps.pin.outputs.image }}
+          format: sarif
+          output: trivy-${{ matrix.name }}.sarif
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+
+      - name: Upload Trivy SARIF (${{ matrix.name }}) to GitHub Security
+        uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          sarif_file: trivy-${{ matrix.name }}.sarif
+          category: trivy-${{ matrix.name }}
+
+  check-pin-freshness:
+    name: Check pinned images for upstream drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Scheduled + manual dispatch only: a new upstream release is not
+    # actionable inside an unrelated PR. On the cron the failure lands as a
+    # workflow-failure notification to the maintainer — a stale pin must
+    # not sit unnoticed. Dependabot cannot see these pins (they are compose
+    # interpolation defaults, not Dockerfile literals), so this job is the
+    # actual tracking mechanism.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Compare pinned digests against what each tag resolves to now
+        run: |
+          status=0
+          for var in JELLYFIN_IMAGE_TAG JELLYFIN_BACKUPS_IMAGE_TAG TRAEFIK_IMAGE_TAG; do
+            pin="$(grep -m1 -oE "\\$\\{${var}:-.*" jellyfin-traefik-letsencrypt-docker-compose.yml | sed -E -e ':a' -e 's/\$\{[A-Z0-9_]+:-([^{}]*)\}/\1/' -e 'ta')"
+            ref="${pin%%@*}"
+            pinned_digest="${pin##*@}"
+            # Three attempts: an unanswered registry lookup used to leave this empty,
+            # and the comparison below then reported it as drift.
+            current_digest=""
+            for attempt in 1 2 3; do
+              current_digest="$(docker buildx imagetools inspect "$ref" --format '{{json .Manifest}}' 2>/dev/null | jq -r '.digest // empty')"
+              [ -n "$current_digest" ] && break
+              sleep $(( attempt * 5 ))
+            done
+            if [ -z "$current_digest" ]; then
+              echo "::error::${ref} did not resolve after three attempts: the registry did not answer, or the tag is gone. The pin itself is unchanged."
+              status=1
+              continue
+            fi
+            if [ "$pinned_digest" != "$current_digest" ]; then
+              echo "::error::${var} digest drift: pinned ${pinned_digest}, but ${ref} now resolves to ${current_digest}"
+              status=1
+            else
+              echo "${var} OK (${ref})"
+            fi
+          done
+          exit "$status"
+
+      - name: Compare the pinned Jellyfin version against the latest release
+        # Runs even when the digest comparison above failed, so one run
+        # reports every problem it can see instead of one per day.
+        if: always()
+        run: |
+          pin="$(grep -m1 -oE '\$\{JELLYFIN_IMAGE_TAG:-.*' jellyfin-traefik-letsencrypt-docker-compose.yml | sed -E -e ':a' -e 's/\$\{[A-Z0-9_]+:-([^{}]*)\}/\1/' -e 'ta')"
+          ref="${pin%%@*}"; pinned="${ref##*:}"
+          latest="$(curl -fsSL --retry 3 -H "Authorization: Bearer $GH_API_TOKEN" https://api.github.com/repos/jellyfin/jellyfin/releases/latest | jq -r .tag_name)"
+          latest="${latest#v}"
+          if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+            echo "::error::Could not determine the latest Jellyfin release from the GitHub API"
+            exit 1
+          fi
+          if [ "$pinned" != "$latest" ]; then
+            echo "::error::Jellyfin pin is behind: pinned ${pinned}, latest release is ${latest}"
+            exit 1
+          fi
+          echo "Jellyfin pin ${pinned} matches the latest release"
+
+      - name: Compare pinned Traefik minor against the latest release
+        # Runs even when the digest comparison above failed, so one run
+        # reports every problem it can see instead of one per day.
+        if: always()
+        run: |
+          pin="$(grep -m1 -oE '\$\{TRAEFIK_IMAGE_TAG:-.*' jellyfin-traefik-letsencrypt-docker-compose.yml | sed -E -e ':a' -e 's/\$\{[A-Z0-9_]+:-([^{}]*)\}/\1/' -e 'ta')"
+          ref="${pin%%@*}"
+          pinned_minor="${ref##*:}"
+          latest="$(curl -fsSL --retry 3 -H "Authorization: Bearer $GH_API_TOKEN" https://api.github.com/repos/traefik/traefik/releases/latest | jq -r .tag_name)"
+          latest="${latest#v}"
+          if [ -z "$latest" ] || [ "$latest" = "null" ]; then
+            echo "::error::Could not determine the latest Traefik release from the GitHub API"
+            exit 1
+          fi
+          case "$latest" in
+            "$pinned_minor".*) echo "Traefik pin ${pinned_minor} matches the latest release line (${latest})" ;;
+            *) echo "::error::Traefik pin is behind: pinned minor ${pinned_minor}, latest release is ${latest}"; exit 1 ;;
+          esac
+
+  deploy-and-test:
+    name: docker compose up + Jellyfin HTTPS smoke + backup validity
+    runs-on: ubuntu-latest
+    needs: lint
+    timeout-minutes: 35
+    permissions:
+      contents: read
+
+    env:
+      NETWORK_ONE: jellyfin-network
+      NETWORK_TWO: traefik-network
+      DOCKER_COMPOSE_FILE: jellyfin-traefik-letsencrypt-docker-compose.yml
+      APP_HOSTNAME: jellyfin.heyvaldemardm.net
+      APP_TRAEFIK_HOSTNAME: traefik.jellyfin.heyvaldemardm.net
+      COMPOSE_PROJECT_NAME: jellyfin
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Create necessary Docker networks
+        run: |
+          docker network create "$NETWORK_ONE" || true
+          docker network create "$NETWORK_TWO" || true
+
+      - name: Generate test .env with ephemeral credentials
+        # The real .env is gitignored. CI generates throwaway credentials so
+        # `docker compose up` succeeds without committing secrets to the
+        # repo. No *_IMAGE_TAG values on purpose: the compose file's
+        # x-images defaults apply, so CI always tests exactly the pins the
+        # template ships to users who run it unmodified.
+        run: |
+          cat > .env <<EOF
+          TRAEFIK_ACME_EMAIL=ci@example.com
+          TRAEFIK_HOSTNAME=${APP_TRAEFIK_HOSTNAME}
+          TRAEFIK_BASIC_AUTH=traefikadmin:\$\$2y\$\$10\$\$sMzJfirKC75x/hVpiINeZOiSm.Jkity9cn4KwNkRvO7hSQVFc5FLO
+          JELLYFIN_HOSTNAME=${APP_HOSTNAME}
+          BACKUP_INIT_SLEEP=15s
+          BACKUP_INTERVAL=60s
+          EOF
+          # The media mount defaults to ./media; CI has no library, and an
+          # empty directory is the honest stand-in - it proves the mount works
+          # without pretending there is content to scan.
+          mkdir -p media
+          echo "Generated ephemeral .env for CI run"
+
+      - name: Upgrade drill — the previous release comes up first, on the volumes this run will upgrade
+        # A fresh stack proves the new image starts. It proves nothing about the
+        # data a deployed host already has: whether the new database image accepts
+        # the old data directory, whether the application's migrations run on a
+        # populated schema. So the previous release is started first, on this
+        # project's volumes, and the ordinary `up -d` below then recreates the
+        # changed containers on top of it - which is exactly what `git pull &&
+        # docker compose up -d` does on a deployed host. Every smoke check that
+        # follows judges the upgraded stack, not a fresh one.
+        run: |
+          prev="$(git ls-remote --tags --sort=-v:refname origin 'v*' | grep -v '\^{}' | head -1 | sed 's|.*refs/tags/||')"
+          if [ -z "$prev" ]; then
+            echo "no previous release: nothing to upgrade from, the fresh start below is the whole test"
+            exit 0
+          fi
+          git fetch --depth=1 --quiet origin "refs/tags/$prev:refs/tags/$prev"
+          if git diff --quiet "$prev" -- "$DOCKER_COMPOSE_FILE"; then
+            echo "the compose file is unchanged since $prev: nothing to drill"
+            exit 0
+          fi
+          git show "$prev:$DOCKER_COMPOSE_FILE" > .upgrade-drill-previous.yml
+          echo "starting $prev on this project's volumes"
+          docker compose -f .upgrade-drill-previous.yml -p "$COMPOSE_PROJECT_NAME" up -d
+          # Healthy means: every container is running and healthy (or running
+          # with no health check), or exited 0 (a one-shot init container).
+          bad=""
+          for _ in $(seq 1 60); do
+            bad="$(docker compose -f .upgrade-drill-previous.yml -p "$COMPOSE_PROJECT_NAME" ps -a --format json \
+              | jq -rs '[.[] | select((.State == "running" and (.Health == "" or .Health == "healthy")) or (.State == "exited" and .ExitCode == 0) | not)] | map("\(.Service):\(.State)/\(.Health)") | join(" ")')"
+            [ -z "$bad" ] && break
+            sleep 10
+          done
+          if [ -n "$bad" ]; then
+            echo "::error::the previous release ($prev) did not come up with this run's .env: $bad. Either the variable contract changed - then the changelog must say so - or $prev was never green here."
+            docker compose -f .upgrade-drill-previous.yml -p "$COMPOSE_PROJECT_NAME" logs --tail 80
+            exit 1
+          fi
+          echo "$prev is up and healthy; stopping it and keeping its volumes"
+          docker compose -f .upgrade-drill-previous.yml -p "$COMPOSE_PROJECT_NAME" down
+          rm -f .upgrade-drill-previous.yml
+          echo "the start below is now an upgrade from $prev"
+
+      - name: Start up services using Docker Compose
+        run: docker compose -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" up -d
+
+      - name: Modify /etc/hosts for internal routing
+        run: |
+          echo "127.0.0.1 $APP_HOSTNAME" | sudo tee -a /etc/hosts
+          echo "127.0.0.1 $APP_TRAEFIK_HOSTNAME" | sudo tee -a /etc/hosts
+
+      - name: Print Docker Compose services status
+        run: docker ps
+
+      - name: Wait for Jellyfin through Traefik
+        # /System/Info/Public is what the dashboard asks before it renders
+        # anything, and it answers with the setup state rather than merely a
+        # status code. A fresh deployment says {"type":"setup-database"}: that
+        # is the whole chain working - Traefik, the certificate, the container,
+        # and the application having opened its data directory.
+        run: |
+          # shellcheck disable=SC2016
+          timeout 8m bash -c 'while ! curl -sk "https://$APP_HOSTNAME/System/Info/Public" | grep -q "\"Version\""; do
+            echo "Waiting for Jellyfin..."
+            sleep 10
+          done'
+          curl -sk "https://$APP_HOSTNAME/System/Info/Public" -w "\n"
+          curl -skL -o /dev/null -w "Jellyfin UI: %{http_code}\n" "https://$APP_HOSTNAME/"
+
+      - name: Verify a backup is produced and valid
+        # Log-driven: the file named in a 'backup OK' line has already been
+        # read back by the loop itself, so this never races a cycle that is
+        # still writing.
+        run: |
+          # shellcheck disable=SC2016
+          timeout 6m bash -c 'until docker compose -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" logs backups 2>/dev/null | grep -q "Data backup OK"; do echo "Waiting for the first backup cycle..."; sleep 10; done'
+          data=$(docker compose -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" logs backups 2>/dev/null | grep "Data backup OK" | tail -1 | sed -E 's/.*Data backup OK: ([^ ]+) .*/\1/')
+          [ -n "$data" ] || { echo "::error::no 'Data backup OK' line - the archive failed"; exit 1; }
+          echo "Data backup file: $data"
+          docker compose -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" exec -T backups sh -c "tar -tzf '$data' > /dev/null && tar -tzf '$data' | grep -q '^config/'" \
+            && echo "Data backup valid and carries the data directory: $data"
+          docker compose -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" logs backups 2>/dev/null | grep -i "backup FAILED" && { echo "::error::the backups log reports a failure"; exit 1; } || true
+
+      - name: Run the backup/restore end-to-end tests
+        # Eight scenarios against the live stack: required-env guard, backup
+        # produced, readable, valid content, library archive readable, failure
+        # detected when the database is down, restore genuinely replaces state,
+        # prune keeps recent files. Same script a maintainer runs locally.
+        run: |
+          chmod +x tests/e2e-backup-restore.sh
+          ./tests/e2e-backup-restore.sh
+
+      - name: Jellyfin answers on the restored data directory
+        # The end-to-end test above empties the data directory and unpacks an
+        # archive over it while the container is stopped. A restore that leaves
+        # the SQLite file in a state the application rejects passes every check
+        # up to here and fails the first time somebody actually needs it.
+        run: |
+          docker compose -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" restart jellyfin
+          # shellcheck disable=SC2016
+          timeout 6m bash -c 'while ! curl -sk "https://$APP_HOSTNAME/System/Info/Public" | grep -q "\"Version\""; do
+            echo "Waiting for Jellyfin on the restored data..."
+            sleep 10
+          done'
+          echo "Jellyfin came back on the restored data directory"
+
+      - name: Wait for the Traefik dashboard to be ready
+        run: |
+          # shellcheck disable=SC2016
+          timeout 5m bash -c 'while ! curl -fsSLk --write-out "%{http_code}" --output /dev/null "https://$APP_TRAEFIK_HOSTNAME" | grep -E "200|401"; do
+            echo "Waiting for the dashboard to be ready..."
+            sleep 10
+          done'
+
+      - name: Show container logs on failure
+        if: failure()
+        run: docker compose -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" logs
+
+      - name: Shutdown Docker Compose services
+        if: always()
+        run: docker compose -f "$DOCKER_COMPOSE_FILE" -p "$COMPOSE_PROJECT_NAME" down

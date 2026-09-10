@@ -1,0 +1,264 @@
+# Image pins live HERE, as interpolation defaults, so `git pull` (or
+# re-downloading this file) delivers the exact version combination this
+# repository has tested — no .env editing required. Setting the matching
+# variable in .env overrides the default for anyone who wants to pin
+# differently; .env itself carries only secrets and deliberate overrides.
+# CI (Trivy scans, check-pin-freshness, the ephemeral test .env) reads
+# the pins from these lines — this block is the single source of truth.
+x-images:
+  traefik: &traefik-image ${TRAEFIK_IMAGE_TAG:-traefik:${TRAEFIK_IMAGE_VERSION:-3.7@sha256:f86a2cab1b5c649070c49f883c743dd32d8485a56e3368c5f93b9e91f1e91259}}
+  jellyfin: &jellyfin-image ${JELLYFIN_IMAGE_TAG:-jellyfin/jellyfin:${JELLYFIN_IMAGE_VERSION:-12.0@sha256:baba630419915985442f315f08b0cf46d9f4c8a0cc4bd38e94a6d35751dd5ef5}}
+  backups: &backups-image ${JELLYFIN_BACKUPS_IMAGE_TAG:-alpine:${JELLYFIN_BACKUPS_IMAGE_VERSION:-3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce}}
+
+networks:
+  jellyfin-network:
+    external: true
+  traefik-network:
+    external: true
+
+volumes:
+  jellyfin-config:
+  jellyfin-cache:
+  jellyfin-config-backups:
+  traefik-certificates:
+
+services:
+  jellyfin:
+    image: *jellyfin-image
+    # Hardening: no privilege escalation via setuid binaries
+    security_opt:
+      - no-new-privileges:true
+    # The config directory holds a SQLite library database that is written
+    # while anything is playing. Docker's default is ten seconds to SIGKILL,
+    # and a kill during a checkpoint leaves a write-ahead log to replay at best
+    # and a torn page at worst. Sixty seconds, overridable in .env.
+    stop_grace_period: ${JELLYFIN_STOP_GRACE_PERIOD:-60s}
+    # Resource limits as .env-overridable defaults (e.g. JELLYFIN_MEMORY_LIMIT=4g);
+    # the override survives every git pull. Software transcoding is what makes
+    # this number matter: one 4K stream re-encoded on the CPU will use every
+    # core you give it. See the hardware-transcoding note in the README.
+    deploy:
+      resources:
+        limits:
+          memory: ${JELLYFIN_MEMORY_LIMIT:-4g}
+          cpus: "${JELLYFIN_CPU_LIMIT:-4.0}"
+        reservations:
+          memory: ${JELLYFIN_MEMORY_RESERVATION:-512m}
+          cpus: "${JELLYFIN_CPU_RESERVATION:-0.5}"
+    volumes:
+      # Settings, users, the library database, downloaded metadata and artwork.
+      # This is the one worth backing up.
+      - jellyfin-config:/config
+      # Transcoding scratch and image cache. Regenerated on demand; excluded
+      # from the archive on purpose.
+      - jellyfin-cache:/cache
+      # YOUR MEDIA. Read-only: Jellyfin never needs to write here, and a media
+      # server with write access to the library is one bad plugin away from a
+      # very long restore. Point JELLYFIN_MEDIA_PATH at the real directory.
+      - ${JELLYFIN_MEDIA_PATH:-./media}:/media:ro
+    environment:
+      TZ: ${JELLYFIN_TZ:-Etc/UTC}
+      # The URL clients are told to come back to. Without it, apps discovering
+      # the server on the LAN are handed an address that only works there.
+      JELLYFIN_PublishedServerUrl: https://${JELLYFIN_HOSTNAME:?set in .env - see .env.example}
+    networks:
+      - jellyfin-network
+      - traefik-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://127.0.0.1:8096/health || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 6
+      start_period: 120s
+    labels:
+      # Enable Traefik for this container
+      - "traefik.enable=true"
+      # Match incoming requests on a specific hostname
+      - "traefik.http.routers.jellyfin.rule=Host(`${JELLYFIN_HOSTNAME:?set in .env - see .env.example}`)"
+      # Assign the router to a named Traefik service
+      - "traefik.http.routers.jellyfin.service=jellyfin"
+      # Use the 'websecure' (HTTPS) entry point
+      - "traefik.http.routers.jellyfin.entrypoints=websecure"
+      # Define the internal container port for routing
+      - "traefik.http.services.jellyfin.loadbalancer.server.port=8096"
+      # Enable TLS on this router
+      - "traefik.http.routers.jellyfin.tls=true"
+      # Use Let's Encrypt for certificate management
+      - "traefik.http.routers.jellyfin.tls.certresolver=letsencrypt"
+      # Pass the original Host header to the container
+      - "traefik.http.services.jellyfin.loadbalancer.passhostheader=true"
+      # Streaming is one long response and an upload is one long request.
+      # Traefik buffers both by default, which for video means holding a file
+      # in memory before a byte reaches the player. Zero disables buffering in
+      # both directions, which is what makes seeking responsive.
+      - "traefik.http.middlewares.jellyfin-buffer.buffering.maxRequestBodyBytes=0"
+      - "traefik.http.middlewares.jellyfin-buffer.buffering.memRequestBodyBytes=0"
+      - "traefik.http.middlewares.jellyfin-buffer.buffering.maxResponseBodyBytes=0"
+      - "traefik.http.middlewares.jellyfin-buffer.buffering.memResponseBodyBytes=0"
+      - "traefik.http.routers.jellyfin.middlewares=jellyfin-buffer"
+      # Specify which Docker network Traefik should use for routing
+      - "traefik.docker.network=traefik-network"
+    restart: unless-stopped
+    depends_on:
+      traefik:
+        condition: service_healthy
+
+  traefik:
+    image: *traefik-image
+    # Hardening: no privilege escalation via setuid binaries
+    security_opt:
+      - no-new-privileges:true
+    # Drop every Linux capability; add back only what this image's
+    # entrypoint needs (bind :80/:443).
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    # Resource limits as .env-overridable defaults (e.g. TRAEFIK_MEMORY_LIMIT=2g);
+    # the override survives every git pull.
+    deploy:
+      resources:
+        limits:
+          memory: ${TRAEFIK_MEMORY_LIMIT:-256m}
+          cpus: "${TRAEFIK_CPU_LIMIT:-0.5}"
+        reservations:
+          memory: ${TRAEFIK_MEMORY_RESERVATION:-64m}
+          cpus: "${TRAEFIK_CPU_RESERVATION:-0.1}"
+    command:
+      # Set the log level (DEBUG, INFO, WARN, ERROR)
+      - "--log.level=${TRAEFIK_LOG_LEVEL:-WARN}"
+      # Enable the built-in API and web-based dashboard
+      - "--api.dashboard=true"
+      # Enable the /ping endpoint so we can health-check Traefik
+      - "--ping=true"
+      # Assign the /ping endpoint to a dedicated entry point on port 8082
+      - "--ping.entrypoint=ping"
+      - "--entrypoints.ping.address=:8082"
+      # Define the primary HTTP entry point on port 80
+      - "--entrypoints.web.address=:80"
+      # Define the secure (HTTPS) entry point on port 443
+      - "--entrypoints.websecure.address=:443"
+      # HTTP -> HTTPS redirect at entrypoint level
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      # A film is one response that lasts as long as the film. The default
+      # timeouts cut a stream off mid-playback.
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=${JELLYFIN_STREAM_TIMEOUT:-0s}"
+      - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=${JELLYFIN_STREAM_TIMEOUT:-0s}"
+      - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=${JELLYFIN_IDLE_TIMEOUT:-600s}"
+      # Enable the Docker provider to detect containers and their labels
+      - "--providers.docker=true"
+      # Point Traefik to the Docker socket
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      # Prevent automatic exposure of all containers; only expose containers
+      # with "traefik.enable=true"
+      - "--providers.docker.exposedbydefault=false"
+      # Use ACME (Let's Encrypt) to generate/renew certificates via TLS challenge
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      # The email address used by Let's Encrypt for renewal notices
+      - "--certificatesresolvers.letsencrypt.acme.email=${TRAEFIK_ACME_EMAIL:?set in .env - see .env.example}"
+      # The file where ACME certificates are stored inside the container
+      - "--certificatesresolvers.letsencrypt.acme.storage=/etc/traefik/acme/acme.json"
+      # Enable Prometheus metrics
+      - "--metrics.prometheus=true"
+      # Configure Prometheus histogram buckets
+      - "--metrics.prometheus.buckets=0.1,0.3,1.2,5.0"
+      # Check for newer Traefik versions and optionally log that info
+      - "--global.checknewversion=true"
+      # Disable sending anonymous usage data to the Traefik maintainers
+      - "--global.sendanonymoususage=false"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik-certificates:/etc/traefik/acme
+    networks:
+      - traefik-network
+    ports:
+      - "80:80"
+      - "443:443"
+    healthcheck:
+      test: ["CMD", "wget", "http://localhost:8082/ping","--spider"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    labels:
+      # Enable Traefik for this container
+      - "traefik.enable=true"
+      # A router to expose the Traefik dashboard
+      - "traefik.http.routers.dashboard.rule=Host(`${TRAEFIK_HOSTNAME:?set in .env - see .env.example}`)"
+      - "traefik.http.routers.dashboard.entrypoints=websecure"
+      - "traefik.http.routers.dashboard.tls=true"
+      - "traefik.http.routers.dashboard.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.dashboard.service=api@internal"
+      # Basic Authentication for the Traefik dashboard
+      - "traefik.http.routers.dashboard.middlewares=authtraefik"
+      - "traefik.http.middlewares.authtraefik.basicauth.users=${TRAEFIK_BASIC_AUTH:?set in .env - see .env.example for htpasswd generation}"
+      # Specify the internal server port to the dashboard service
+      - "traefik.http.services.dashboard.loadbalancer.server.port=8080"
+      # Pass the original Host header to the backend
+      - "traefik.http.services.dashboard.loadbalancer.passhostheader=true"
+    restart: unless-stopped
+
+  backups:
+    # A plain alpine: the config directory is what is worth keeping, so the
+    # loop needs tar and nothing else.
+    image: *backups-image
+    # Hardening: no privilege escalation via setuid binaries
+    security_opt:
+      - no-new-privileges:true
+    # Drop every Linux capability; add back only what this container needs to
+    # write archives it owns.
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    # Resource limits as .env-overridable defaults; the override survives every
+    # git pull.
+    deploy:
+      resources:
+        limits:
+          memory: ${JELLYFIN_BACKUPS_MEMORY_LIMIT:-256m}
+          cpus: "${JELLYFIN_BACKUPS_CPU_LIMIT:-0.5}"
+        reservations:
+          memory: ${JELLYFIN_BACKUPS_MEMORY_RESERVATION:-16m}
+          cpus: "${JELLYFIN_BACKUPS_CPU_RESERVATION:-0.1}"
+    command: >-
+      sh -c 'sleep "$$BACKUP_INIT_SLEEP";
+      while true; do
+        STAMP="$$(date +%Y-%m-%d_%H-%M)";
+        DATA_FILE="$$DATA_BACKUPS_PATH/$$DATA_BACKUP_NAME-$$STAMP.tar.gz";
+        echo "[$$(date -Iseconds)] Starting config backup to $$DATA_FILE";
+        # Written to .partial and renamed only after the archive has been read
+        # back. The exit code alone cannot decide this: GNU tar reserves 1 for
+        # a file that changed mid-read and 2 for a real failure, but this is
+        # BusyBox tar, which returns 1 for both - including the is-a-directory
+        # case, where nothing was written at all. Reading it back is true on
+        # either tar and promises more than the code ever did.
+        tar -zcpf "$$DATA_FILE.partial" $$DATA_PATH; RC=$$?;
+        if { [ "$$RC" -eq 0 ] || [ "$$RC" -eq 1 ]; } && tar -tzf "$$DATA_FILE.partial" > /dev/null 2>&1; then
+          mv "$$DATA_FILE.partial" "$$DATA_FILE";
+          echo "[$$(date -Iseconds)] Data backup OK: $$DATA_FILE ($$(stat -c %s "$$DATA_FILE") bytes)$$([ "$$RC" -eq 1 ] && echo " - some files changed while being read")";
+        else
+          echo "[$$(date -Iseconds)] Data backup FAILED - partial file kept as $$DATA_FILE.failed for diagnosis" >&2;
+          mv "$$DATA_FILE.partial" "$$DATA_FILE.failed" 2>/dev/null || true;
+        fi;
+        if [ "$${DATA_BACKUP_PRUNE_DAYS:-0}" -ge 1 ]; then
+          find "$$DATA_BACKUPS_PATH" -type f -name "$$DATA_BACKUP_NAME-*" -mtime "+$$DATA_BACKUP_PRUNE_DAYS" -delete;
+        fi;
+        sleep "$$BACKUP_INTERVAL";
+      done'
+    volumes:
+      - jellyfin-config:${DATA_PATH:-/config}
+      - jellyfin-config-backups:${DATA_BACKUPS_PATH:-/srv/jellyfin-config/backups}
+    environment:
+      BACKUP_INIT_SLEEP: ${BACKUP_INIT_SLEEP:-30m}
+      BACKUP_INTERVAL: ${BACKUP_INTERVAL:-24h}
+      DATA_BACKUP_PRUNE_DAYS: ${DATA_BACKUP_PRUNE_DAYS:-7}
+      DATA_BACKUPS_PATH: ${DATA_BACKUPS_PATH:-/srv/jellyfin-config/backups}
+      DATA_PATH: ${DATA_PATH:-/config}
+      DATA_BACKUP_NAME: ${DATA_BACKUP_NAME:-jellyfin-config-backup}
+    networks:
+      - jellyfin-network
+    restart: unless-stopped

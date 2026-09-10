@@ -1,0 +1,46 @@
+# Hardware transcoding, as a separate file on purpose.
+#
+# A GPU is a property of the host, not of this template. Putting the device
+# passthrough in the compose file itself would mean the stack refuses to start
+# on any machine without that exact device node - including the CI runner that
+# proves this template works, and including anybody who deploys it on a VPS.
+#
+# Use it by naming both files, in this order:
+#
+#     docker compose \
+#       -f jellyfin-traefik-letsencrypt-docker-compose.yml \
+#       -f hardware-transcoding.override.yml \
+#       -p jellyfin up -d
+#
+# Then turn it on in Jellyfin itself: Dashboard -> Playback -> Transcoding ->
+# Hardware acceleration. The device being present changes nothing until the
+# server is told to use it.
+#
+# BEFORE YOU USE IT, on the host:
+#
+#   ls -l /dev/dri
+#       Intel and AMD expose renderD128 and a cardN. If /dev/dri does not
+#       exist, this host has no GPU to pass through and this file will only
+#       stop the stack from starting.
+#
+#   stat -c '%g' /dev/dri/renderD128
+#       The group id that owns the render node. That number goes in
+#       JELLYFIN_RENDER_GID; it is NOT the same on every distribution and
+#       guessing it is why hardware acceleration silently falls back to the
+#       CPU.
+#
+#   id -u && id -g
+#       The user Jellyfin should run as. Running as root would work and is
+#       worth avoiding: this process reads a media library and speaks HTTP.
+#
+# NVIDIA is different: it needs the NVIDIA Container Toolkit and a `deploy`
+# reservation rather than a device node. Jellyfin's own documentation covers
+# it, and this file deliberately does not guess at it.
+services:
+  jellyfin:
+    user: "${JELLYFIN_UID:?set in .env - the output of id -u}:${JELLYFIN_GID:?set in .env - the output of id -g}"
+    group_add:
+      - "${JELLYFIN_RENDER_GID:?set in .env - stat -c '%g' /dev/dri/renderD128}"
+    devices:
+      - ${JELLYFIN_RENDER_DEVICE:-/dev/dri/renderD128}:${JELLYFIN_RENDER_DEVICE:-/dev/dri/renderD128}
+      - ${JELLYFIN_CARD_DEVICE:-/dev/dri/card0}:${JELLYFIN_CARD_DEVICE:-/dev/dri/card0}

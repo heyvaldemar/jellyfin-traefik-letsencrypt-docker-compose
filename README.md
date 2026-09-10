@@ -42,7 +42,7 @@ curl -sk "https://${JELLYFIN_HOSTNAME}/System/Info/Public"
 ### Common first-deploy issues
 
 - **The library is empty after a scan.** The media mount is read-only and points where `JELLYFIN_MEDIA_PATH` says. Check it resolves to the directory you meant: `docker compose -p jellyfin exec jellyfin ls /media`.
-- **Playback stops after a minute or two.** Something between the client and Traefik is enforcing a response timeout. This template sets Traefik's to zero, because a film is one response that lasts as long as the film; a proxy or tunnel in front of it may have its own.
+- **Playback stops after a minute or two, or the first byte takes forever.** Something between the client and Traefik is holding or timing the response. Traefik's own limits are lifted here — and note that it streams by default, so a Buffering middleware added anywhere in the chain is what would make it hold a film before playing it. A proxy or tunnel in front has its own settings.
 - **Everything transcodes on the CPU and the box melts.** That is the default. See the section below — the device alone is not enough, Jellyfin has to be told to use it.
 - **Cert issuance fails.** DNS has not propagated, or port 80 is not reachable from the internet.
 - **Networks not found.** Step 2 was skipped.

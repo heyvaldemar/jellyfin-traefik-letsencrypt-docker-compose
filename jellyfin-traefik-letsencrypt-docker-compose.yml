@@ -87,15 +87,15 @@ services:
       - "traefik.http.routers.jellyfin.tls.certresolver=letsencrypt"
       # Pass the original Host header to the container
       - "traefik.http.services.jellyfin.loadbalancer.passhostheader=true"
-      # Streaming is one long response and an upload is one long request.
-      # Traefik buffers both by default, which for video means holding a file
-      # in memory before a byte reaches the player. Zero disables buffering in
-      # both directions, which is what makes seeking responsive.
-      - "traefik.http.middlewares.jellyfin-buffer.buffering.maxRequestBodyBytes=0"
-      - "traefik.http.middlewares.jellyfin-buffer.buffering.memRequestBodyBytes=0"
-      - "traefik.http.middlewares.jellyfin-buffer.buffering.maxResponseBodyBytes=0"
-      - "traefik.http.middlewares.jellyfin-buffer.buffering.memResponseBodyBytes=0"
-      - "traefik.http.routers.jellyfin.middlewares=jellyfin-buffer"
+      # THERE IS DELIBERATELY NO BUFFERING MIDDLEWARE HERE. Traefik streams
+      # request and response bodies unless you attach one; attaching it is what
+      # turns buffering ON, and setting its limits to 0 means "no size ceiling",
+      # not "off". Measured against a response that takes four seconds to
+      # produce: without the middleware the first byte arrives in 0.03s, with
+      # an all-zero one it arrives at 4.15s - for video, an entire film held in
+      # the proxy before playback can start, and every seek paying it again.
+      # What limits a long upload is the entry point's readTimeout, which is
+      # 60s by default and is set to zero below.
       # Specify which Docker network Traefik should use for routing
       - "traefik.docker.network=traefik-network"
     restart: unless-stopped

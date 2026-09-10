@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.0.1] - 2026-09-10
+
+### Fixed
+
+- **The proxy was buffering every stream instead of passing it through.** The
+  compose file attached a Traefik `buffering` middleware with all four limits
+  set to `0`, in the belief that Traefik buffers by default and that zero
+  turned it off. Both halves of that were wrong. Traefik streams bodies unless
+  a Buffering middleware is attached; attaching one is what turns buffering on,
+  and `0` on its limits means *no size ceiling*, not *disabled*.
+
+  Measured against a response that takes four seconds to produce: without the
+  middleware the first byte reaches the client in 0.03s, with it at 4.15s. For
+  video that is the whole film assembled in the proxy before playback can
+  start, memory in Traefik proportional to what is being watched, and every
+  seek paying it again.
+
+  The middleware is gone. What actually limits a long request is the entry
+  point's `readTimeout`, 60 seconds by default, which this template already
+  sets to zero; `idleTimeout` is raised from the 180-second default to ten
+  minutes. Those were correct and are unchanged.
+
+  Found by reading Traefik's own API back and seeing the middleware Traefik had
+  built from the labels, then measuring it rather than trusting the label.
+
 ## [1.0.0] - 2026-09-10
 
 First release. A production deployment of Jellyfin behind Traefik, built to the
@@ -20,10 +45,9 @@ fleet standard established in
 - **Jellyfin 12.0 behind Traefik with Let's Encrypt TLS.** Three images pinned
   by `tag@sha256:<digest>` in the compose `x-images` block: the server,
   Traefik, and a plain alpine for the backups sidecar.
-- **Streaming that is not cut off by the proxy.** Traefik buffers requests and
-  responses by default, which for video means holding a file in memory before a
-  byte reaches the player, and its response timeout ends a film part way. Both
-  are turned off for this router, which is what makes seeking responsive.
+- **Streaming that is not cut off by the proxy.** Traefik gives an entry point
+  60 seconds to read an entire request by default and closes an idle connection
+  after 180; both are lifted here, the idle timeout to ten minutes.
 - **Hardware transcoding as an opt-in override file.** A GPU belongs to the
   host: putting `/dev/dri` in the compose file means the stack refuses to start
   anywhere that device does not exist, including the CI runner that proves this
@@ -57,5 +81,6 @@ fleet standard established in
   expensive part: users, the library database with watch state, metadata,
   artwork, plugins and API keys.
 
-[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.0.1
 [1.0.0]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.0.0

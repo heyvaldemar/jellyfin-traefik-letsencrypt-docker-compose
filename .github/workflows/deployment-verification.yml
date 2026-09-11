@@ -68,6 +68,8 @@ jobs:
             env_var: JELLYFIN_BACKUPS_IMAGE_TAG
           - name: traefik
             env_var: TRAEFIK_IMAGE_TAG
+          - name: orphans
+            env_var: JELLYFIN_ORPHANS_IMAGE_TAG
 
     steps:
       - name: Checkout repository
@@ -120,7 +122,7 @@ jobs:
       - name: Compare pinned digests against what each tag resolves to now
         run: |
           status=0
-          for var in JELLYFIN_IMAGE_TAG JELLYFIN_BACKUPS_IMAGE_TAG TRAEFIK_IMAGE_TAG; do
+          for var in JELLYFIN_IMAGE_TAG JELLYFIN_BACKUPS_IMAGE_TAG TRAEFIK_IMAGE_TAG JELLYFIN_ORPHANS_IMAGE_TAG; do
             pin="$(grep -m1 -oE "\\$\\{${var}:-.*" jellyfin-traefik-letsencrypt-docker-compose.yml | sed -E -e ':a' -e 's/\$\{[A-Z0-9_]+:-([^{}]*)\}/\1/' -e 'ta')"
             ref="${pin%%@*}"
             pinned_digest="${pin##*@}"
@@ -334,6 +336,17 @@ jobs:
             sleep 10
           done'
           echo "Jellyfin came back on the restored data directory"
+
+      - name: Run the orphan-cleanup end-to-end tests
+        # Builds a library on real video, then produces an orphan the way a
+        # library really produces one - a root that moves away and never comes
+        # back under that path - and proves the rows survive a scan, a restart
+        # and another scan before the tool is allowed anywhere near them. Then
+        # both refusals, the removal across cascading and non-cascading tables,
+        # and Jellyfin coming back up on the edited database.
+        run: |
+          chmod +x tests/e2e-orphan-cleanup.sh jellyfin-drop-orphans.sh
+          ./tests/e2e-orphan-cleanup.sh
 
       - name: Wait for the Traefik dashboard to be ready
         run: |

@@ -9,6 +9,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.1.0] - 2026-09-11
+
+### Added
+
+- **A tool for library rows whose file is gone.** `jellyfin-drop-orphans.sh`
+  reports them, and on request removes them.
+
+  A library scan removes missing items only in the folders it can enter. A
+  folder it cannot enter is left alone entirely, and that is deliberate: an
+  unreachable library root is indistinguishable from a detached disk, and
+  Jellyfin would rather keep a library than erase one because a NAS was slow to
+  mount. The cost is that a root which goes away for good strands everything
+  below it. Reproduced against the pinned version and now asserted in CI: move
+  a library root aside, scan, restart, scan again, and the rows underneath it
+  are still there. Nothing will ever walk that path again.
+
+  Restoring a config archive over a library that has moved on since produces
+  exactly the same state, which is what puts this tool in this repository
+  rather than somewhere else.
+
+  It edits the database instead of calling the API on purpose.
+  `DELETE /Items/{id}` removes the row *and the file*. For an orphan there is
+  nothing to delete, right up until one row's path exists in a different
+  Unicode normal form and the composed twin on disk belongs to a different,
+  healthy row. The path comparison is byte for byte for the same reason: the
+  tolerant check that clears false alarms in a disk report is the one that
+  declares such a row healthy and leaves it.
+
+  Above fifty missing files it prints the list and refuses, because fifty
+  missing files is what a detached array looks like. `JELLYFIN_ORPHAN_LIMIT`
+  raises the ceiling once a person has read the list. An empty media mount is
+  refused outright rather than read as a deleted library.
+
+  The work runs in a new `orphans` service in the `tools` profile, so `up`
+  never starts it and `pull` never fetches it. It has the library database, the
+  same read-only media mount Jellyfin has (from one YAML anchor, so the two
+  cannot drift), and no Docker socket. Stopping the server stays on the host
+  with the script, which confirms the container is down by reading its state
+  rather than trusting the exit status of `docker stop`. SQLite will let a
+  second process write a database Jellyfin has open and report nothing at all.
+
+  Deletion turns on `PRAGMA foreign_keys`, so the twelve tables the schema
+  cascades are cleared by the schema itself, including an item's children
+  through `BaseItems.ParentId`. Four tables carry an `ItemId` with no foreign
+  key and are deleted by name. Two more carry a column called `ItemId` that is
+  not an item reference at all: `ActivityLogs`, which should keep saying what
+  happened, and `DisplayPreferences`, whose `ItemId` is a per-user view setting
+  defaulting to the all-zero GUID. Both are named in the source rather than
+  left looking like an oversight. Any other table carrying an `ItemId` is
+  reported as schema drift instead of being deleted from or quietly ignored.
+
+  A copy of the database goes to the backups volume first, written with
+  SQLite's own backup rather than `cp`: a live database has a write-ahead log
+  beside it. The name does not match the retention loop's prune pattern.
+
+- `tests/e2e-orphan-cleanup.sh`, eight scenarios against the live stack, run by
+  CI. Fixture video comes from the ffmpeg inside the Jellyfin image under test,
+  because the scanner skips a file that is not really video and CI should not
+  need to supply a codec to test a database tool.
+
+- `JELLYFIN_ORPHAN_LIMIT` in `.env.example`, and the new `python` pin in the
+  Trivy matrix and the daily freshness check.
+
 ## [1.0.1] - 2026-09-10
 
 ### Fixed
@@ -81,6 +144,7 @@ fleet standard established in
   expensive part: users, the library database with watch state, metadata,
   artwork, plugins and API keys.
 
-[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.1.0
 [1.0.1]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.0.1
 [1.0.0]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.0.0

@@ -115,6 +115,26 @@ chmod +x ./*.sh
 
 It stops the server first: the library database is SQLite and is written while anything is playing. Artwork and chapter images regenerate on demand afterwards, so a full library rescan is not needed.
 
+## Rows that outlive their files
+
+A library scan removes missing items only in the folders it can enter. Take a library root away and everything under it stays in the database: the scan cannot walk a path that is not there, and Jellyfin will not erase a library because a folder failed to appear. That is the right call. From inside the process, an unreachable root and a disk that did not mount are the same event.
+
+The bill arrives later. Restore a config archive over a library that has moved on since, point `JELLYFIN_MEDIA_PATH` somewhere new, or rename a folder that happens to be a root, and rows for files that no longer exist stay in search, in collections and in recently added. CI reproduces it in four steps: move a root aside, scan, restart, scan again. The rows are still there.
+
+```bash
+chmod +x ./*.sh
+./jellyfin-drop-orphans.sh          # report only, nothing is stopped
+./jellyfin-drop-orphans.sh apply    # stop, remove, start
+```
+
+The report groups rows by the folder that went missing instead of listing files, so a mount that did not come up reads as one line rather than forty thousand.
+
+Three decisions make it safe to hand to somebody else. It edits the database rather than calling the API, because `DELETE /Items/{id}` removes the row and the file, and a path recorded in one Unicode normal form can have a composed twin on disk that belongs to a different and perfectly healthy row. It compares paths byte for byte, because the tolerant check that clears false alarms in a disk report is the same check that declares such a row healthy and leaves it in the library. And it refuses above fifty missing files, because fifty missing files is what a detached array looks like, and nothing you can read in the database will tell the two apart. Raise `JELLYFIN_ORPHAN_LIMIT` once you have read the list.
+
+The work happens in the `orphans` container, which holds the library database, the same read-only media mount Jellyfin has, and no Docker socket. Stopping the server stays on the host with the script, which confirms the container is down by reading its state rather than trusting the exit status of `docker stop`. SQLite will let a second process write a database Jellyfin has open, and neither of them will say a word about it.
+
+A copy of the database goes to the backups volume before anything is removed, written with SQLite's own backup rather than `cp`: a live database has a write-ahead log beside it, and a copy of the `.db` alone is a database missing its most recent writes. The retention loop never touches that copy.
+
 ## Resource limits
 
 Every service carries memory and CPU limits plus reservations as compose-level defaults: the same values CI boots the stack under. The defaults assume software transcoding, which is what makes them matter — with hardware acceleration on, most of that allowance sits idle. Override any of them in `.env` and the override survives every `git pull`. If a service is OOM-killed, `docker inspect <container> --format '{{.State.OOMKilled}}'` says so.
@@ -125,7 +145,7 @@ Every service runs with `security_opt: no-new-privileges:true`. The reverse prox
 
 ## Testing
 
-The [Deployment Verification](https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/actions/workflows/deployment-verification.yml?query=branch%3Amain) workflow runs on every push, pull request, and every day at 06:00 UTC: shellcheck and actionlint, Trivy scans of all three pinned images, the daily freshness check, and a deploy job that boots the stack with ephemeral credentials and then requires the server to report its version through Traefik, an archive to be produced and to carry the config directory, the seven backup and restore scenarios to pass, and Jellyfin to come back up on the config directory the restore test replaced underneath it.
+The [Deployment Verification](https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/actions/workflows/deployment-verification.yml?query=branch%3Amain) workflow runs on every push, pull request, and every day at 06:00 UTC: shellcheck and actionlint, Trivy scans of all four pinned images, the daily freshness check, and a deploy job that boots the stack with ephemeral credentials and then requires the server to report its version through Traefik, an archive to be produced and to carry the config directory, the seven backup and restore scenarios to pass, and Jellyfin to come back up on the config directory the restore test replaced underneath it. The orphan-cleanup suite then builds a library on real video and runs eight more.
 
 ### Backup and restore, proven
 
@@ -137,6 +157,17 @@ chmod +x tests/e2e-backup-restore.sh
 ```
 
 Run it on a staging copy, not on production: it stops the server and empties the config directory.
+
+### Orphan cleanup, proven
+
+`tests/e2e-orphan-cleanup.sh` builds a two-root library from video generated by the ffmpeg inside the image under test, because a file that is not really video is skipped by the scanner and CI should not have to supply a codec to test a database tool. It then produces an orphan the way a library really produces one, by moving a root away, and proves the rows survive a scan, a restart and another scan before the tool is allowed near them. After that: the report changes nothing, both refusals fire, the removal clears the tables the schema cascades and the four it does not, the healthy library keeps every row, the database copy opens and holds the state from before, and Jellyfin comes back up on the edited database.
+
+```bash
+chmod +x tests/e2e-orphan-cleanup.sh
+./tests/e2e-orphan-cleanup.sh
+```
+
+Same warning: staging, not production. It creates libraries, moves your media directory around and stops the server.
 
 ## Security notes
 

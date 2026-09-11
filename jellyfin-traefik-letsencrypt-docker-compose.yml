@@ -9,6 +9,13 @@ x-images:
   traefik: &traefik-image ${TRAEFIK_IMAGE_TAG:-traefik:${TRAEFIK_IMAGE_VERSION:-3.7@sha256:f86a2cab1b5c649070c49f883c743dd32d8485a56e3368c5f93b9e91f1e91259}}
   jellyfin: &jellyfin-image ${JELLYFIN_IMAGE_TAG:-jellyfin/jellyfin:${JELLYFIN_IMAGE_VERSION:-12.0@sha256:baba630419915985442f315f08b0cf46d9f4c8a0cc4bd38e94a6d35751dd5ef5}}
   backups: &backups-image ${JELLYFIN_BACKUPS_IMAGE_TAG:-alpine:${JELLYFIN_BACKUPS_IMAGE_VERSION:-3.22@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce}}
+  orphans: &orphans-image ${JELLYFIN_ORPHANS_IMAGE_TAG:-python:${JELLYFIN_ORPHANS_IMAGE_VERSION:-3.13-alpine@sha256:7415fbc3c9e4979cc717d92377ab2bc7b2b4a2af1ac03cc52b5f3f88efedaf3a}}
+
+# One definition of where your library is mounted, used by Jellyfin and by the
+# orphan tool. The tool's whole correctness rests on comparing the path stored
+# in the database against the same filesystem Jellyfin sees, so the two mounts
+# are the same line rather than two lines that agree today.
+x-media-mount: &media-mount ${JELLYFIN_MEDIA_PATH:-./media}:/media:ro
 
 networks:
   jellyfin-network:
@@ -55,7 +62,7 @@ services:
       # YOUR MEDIA. Read-only: Jellyfin never needs to write here, and a media
       # server with write access to the library is one bad plugin away from a
       # very long restore. Point JELLYFIN_MEDIA_PATH at the real directory.
-      - ${JELLYFIN_MEDIA_PATH:-./media}:/media:ro
+      - *media-mount
     environment:
       TZ: ${JELLYFIN_TZ:-Etc/UTC}
       # The URL clients are told to come back to. Without it, apps discovering
@@ -262,3 +269,48 @@ services:
     networks:
       - jellyfin-network
     restart: unless-stopped
+
+  orphans:
+    # A repair tool, not a service: it is in the "tools" profile, so `up` never
+    # starts it and `pull` never fetches it. `docker compose run` turns the
+    # profile on by itself, which is all jellyfin-drop-orphans.sh does.
+    profiles:
+      - tools
+    image: *orphans-image
+    # Hardening: no privilege escalation via setuid binaries
+    security_opt:
+      - no-new-privileges:true
+    # Drop every Linux capability. It reads a database and stats files; there is
+    # nothing here a capability would help with.
+    cap_drop:
+      - ALL
+    # NO DOCKER SOCKET, DELIBERATELY. This container cannot tell whether
+    # Jellyfin is running, and it must not act unless Jellyfin is stopped - a
+    # concurrent write to the library database is silent and corrupting. So the
+    # authority to stop the server stays on the host, with the script, which
+    # proves the container is down by reading its state before handing the
+    # database over. A tool that can edit the database is a tool that should
+    # never also be able to control the daemon.
+    entrypoint: ["python3", "/opt/drop-orphans.py"]
+    command: ["dry"]
+    volumes:
+      # The library database lives here.
+      - jellyfin-config:/config
+      # The same mount Jellyfin has, from the same line above.
+      - *media-mount
+      # A copy of the database is written here before anything is removed, next
+      # to the archives the backups service takes. The name does not match the
+      # prune pattern, so it is never swept up by the retention loop.
+      - jellyfin-config-backups:${DATA_BACKUPS_PATH:-/srv/jellyfin-config/backups}
+      # The tool itself, read-only, straight from the repository.
+      - ./jellyfin-drop-orphans.py:/opt/drop-orphans.py:ro
+    environment:
+      JELLYFIN_DB: ${JELLYFIN_DB:-/config/data/jellyfin.db}
+      JELLYFIN_MEDIA_ROOT: /media
+      JELLYFIN_DB_BACKUP_DIR: ${DATA_BACKUPS_PATH:-/srv/jellyfin-config/backups}
+      # Above this many missing files the tool refuses and tells you to check
+      # your mounts first. Raise it only once you have read the list.
+      JELLYFIN_ORPHAN_LIMIT: ${JELLYFIN_ORPHAN_LIMIT:-50}
+    networks:
+      - jellyfin-network
+    restart: "no"

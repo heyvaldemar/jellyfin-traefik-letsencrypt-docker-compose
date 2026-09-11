@@ -139,11 +139,26 @@ def report(orphans):
 
 
 def check_media_mounted():
-    """An empty media root means the mount is missing, not that you deleted everything."""
+    """Refuse unless the library is really there and really readable.
+
+    Both halves matter, and the second one is not theoretical. os.path.exists
+    answers False for a path it is not allowed to look at, exactly as it does
+    for one that is not there, so a media root this process cannot read makes
+    every single row look like an orphan. That is the one input that turns this
+    tool into the accident it exists to prevent, and it has to be caught before
+    a single path is checked rather than reasoned about afterwards.
+    """
     if not os.path.isdir(MEDIA):
         sys.exit("  REFUSED: %s is not a directory inside this container.\n"
                  "           Nothing was read. Check JELLYFIN_MEDIA_PATH." % MEDIA)
-    if not os.listdir(MEDIA):
+    try:
+        entries = os.listdir(MEDIA)
+    except OSError as exc:
+        sys.exit("  REFUSED: cannot read %s: %s\n"
+                 "           Every row would look like an orphan. The container\n"
+                 "           needs to be able to read the library Jellyfin reads."
+                 % (MEDIA, exc))
+    if not entries:
         sys.exit("  REFUSED: %s is empty. Every row would look like an orphan.\n"
                  "           Mount the library before cleaning the database." % MEDIA)
 

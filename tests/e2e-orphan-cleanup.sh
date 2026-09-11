@@ -238,6 +238,10 @@ test_it_refuses_above_the_limit() {
 test_it_refuses_when_the_library_is_not_mounted() {
   local empty rc=0
   empty="$(mktemp -d)"
+  # mktemp makes it 0700, and this test is about an EMPTY library, not an
+  # unreadable one. On a real runner those are two different failures with two
+  # different messages, and a 0700 directory would quietly test the wrong one.
+  chmod 755 "$empty"
   dc run --rm --no-deps -v "$empty:/media:ro" orphans dry > /tmp/orphan-empty.log 2>&1 || rc=$?
   rmdir "$empty"
   [[ $rc -ne 0 ]] || { echo "  it accepted an empty media mount" >&2; return 1; }

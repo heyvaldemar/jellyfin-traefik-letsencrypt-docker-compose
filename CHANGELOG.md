@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.1.1] - 2026-09-11
+
+### Fixed
+
+- **An unreadable library was a stack trace, and it should have been the
+  loudest refusal in the tool.** `os.path.exists` answers False for a path it
+  is not allowed to look at exactly as it does for one that is not there, so a
+  media root the container cannot read makes every row in the library look like
+  an orphan. That is the single input that turns this tool into the accident it
+  exists to prevent. It is now checked before any path is examined, and it
+  refuses with a line that says which directory and why.
+
+- **The orphans container could not read a library that was not
+  world-readable.** `cap_drop: ALL` takes `DAC_READ_SEARCH` with it, and root
+  without that capability cannot enter a `0700` directory owned by somebody
+  else. Jellyfin itself keeps the default capability set and reads it fine, so
+  the two containers disagreed about what exists. The container now adds back
+  `DAC_READ_SEARCH` and only that: the right to read any file and traverse any
+  directory, with no right to write a byte anywhere. `DAC_OVERRIDE` would have
+  worked too, and would have handed it write access to the media it must never
+  touch.
+
+  Found by CI on a real runner. It could not be found locally: Docker Desktop
+  virtualises bind-mount ownership, so the permission never bites on a Mac.
+
 ## [1.1.0] - 2026-09-11
 
 ### Added
@@ -144,7 +169,8 @@ fleet standard established in
   expensive part: users, the library database with watch state, metadata,
   artwork, plugins and API keys.
 
-[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.1.1
 [1.1.0]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.1.0
 [1.0.1]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.0.1
 [1.0.0]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.0.0

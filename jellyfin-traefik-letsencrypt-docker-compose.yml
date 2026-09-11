@@ -280,10 +280,17 @@ services:
     # Hardening: no privilege escalation via setuid binaries
     security_opt:
       - no-new-privileges:true
-    # Drop every Linux capability. It reads a database and stats files; there is
-    # nothing here a capability would help with.
+    # Drop every Linux capability, then add back exactly one. DAC_READ_SEARCH is
+    # the right to READ any file and traverse any directory; it carries no right
+    # to write a single byte anywhere. Without it a library directory that is
+    # not world-readable is invisible to this container even as root, and an
+    # unreadable path is indistinguishable from a missing one: every row in the
+    # library would look like an orphan. The alternative, DAC_OVERRIDE, would
+    # also hand it write access to the media it must never touch.
     cap_drop:
       - ALL
+    cap_add:
+      - DAC_READ_SEARCH
     # NO DOCKER SOCKET, DELIBERATELY. This container cannot tell whether
     # Jellyfin is running, and it must not act unless Jellyfin is stopped - a
     # concurrent write to the library database is silent and corrupting. So the

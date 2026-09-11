@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(no unreleased changes yet)_
 
+## [1.1.2] - 2026-09-11
+
+### Fixed
+
+- **The orphans service had no resource ceiling.** Every other service in this
+  file carries one, and a repair tool that can take the machine down with it is
+  not a repair tool. Caught by fleet conformance, which is where a missing
+  ceiling should be caught rather than on the night somebody runs the tool
+  against a library with four hundred thousand rows.
+
 ## [1.1.1] - 2026-09-11
 
 ### Fixed
@@ -169,7 +179,8 @@ fleet standard established in
   expensive part: users, the library database with watch state, metadata,
   artwork, plugins and API keys.
 
-[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.2...HEAD
+[1.1.2]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.1.2
 [1.1.1]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.1.1
 [1.1.0]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.1.0
 [1.0.1]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/releases/tag/v1.0.1

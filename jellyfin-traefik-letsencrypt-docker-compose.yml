@@ -300,6 +300,17 @@ services:
     # never also be able to control the daemon.
     entrypoint: ["python3", "/opt/drop-orphans.py"]
     command: ["dry"]
+    # A ceiling like every other service here. It reads one row at a time and
+    # stats one path at a time, so the numbers are small on purpose: a repair
+    # tool that can take the machine down with it is not a repair tool.
+    deploy:
+      resources:
+        limits:
+          memory: ${JELLYFIN_ORPHANS_MEMORY_LIMIT:-256m}
+          cpus: "${JELLYFIN_ORPHANS_CPU_LIMIT:-1.0}"
+        reservations:
+          memory: ${JELLYFIN_ORPHANS_MEMORY_RESERVATION:-32m}
+          cpus: "${JELLYFIN_ORPHANS_CPU_RESERVATION:-0.1}"
     volumes:
       # The library database lives here.
       - jellyfin-config:/config

@@ -80,7 +80,7 @@ If you run with the hardware-transcoding override, add it to your own `up` comma
 
 Three images pinned to `tag@sha256:<digest>` as interpolation defaults in the compose `x-images` block:
 
-- [`jellyfin/jellyfin`](https://hub.docker.com/r/jellyfin/jellyfin): the server, latest stable (12.0)
+- [`jellyfin/jellyfin`](https://hub.docker.com/r/jellyfin/jellyfin): the server, latest stable (12.1)
 - [`traefik`](https://hub.docker.com/_/traefik): reverse proxy
 - [`alpine`](https://hub.docker.com/_/alpine): the backups sidecar, which needs tar and nothing else
 

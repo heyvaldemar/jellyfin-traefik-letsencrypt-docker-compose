@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.1.7] - 2026-09-21
+
 ### Security
 
 - **`python:3.13-alpine` was rebuilt upstream**; the pin moved from `sha256:1a63a53928ce…` to `sha256:79e7a9b9ff1c…`. Same version, same tag, a rebuilt base image — the usual shape of a security fix in a base layer.
@@ -207,7 +211,8 @@ fleet standard established in
   expensive part: users, the library database with watch state, metadata,
   artwork, plugins and API keys.
 
-[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.6...HEAD
+[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.7...HEAD
+[1.1.7]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.4...v1.1.5
 [1.1.4]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.3...v1.1.4

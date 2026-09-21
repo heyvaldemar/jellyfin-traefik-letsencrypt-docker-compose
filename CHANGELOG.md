@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(no unreleased changes yet)_
+### Security
+
+- **`python:3.13-alpine` was rebuilt upstream**; the pin moved from `sha256:1a63a53928ce…` to `sha256:79e7a9b9ff1c…`. Same version, same tag, a rebuilt base image — the usual shape of a security fix in a base layer.
 
 ## [1.1.6] - 2026-09-21
 

@@ -113,6 +113,8 @@ chmod +x ./*.sh
 ./jellyfin-restore-config.sh
 ```
 
+It lists the backups and asks, or takes a file name as its argument; it reads every path from the running backups container, and CI runs it on every push.
+
 It stops the server first: the library database is SQLite and is written while anything is playing. Artwork and chapter images regenerate on demand afterwards, so a full library rescan is not needed.
 
 ## Rows that outlive their files

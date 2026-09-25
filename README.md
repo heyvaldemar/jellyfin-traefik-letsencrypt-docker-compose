@@ -1,6 +1,7 @@
 # Jellyfin + Traefik + Let's Encrypt on Docker Compose
 
 [![Deployment Verification](https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/actions/workflows/deployment-verification.yml/badge.svg?branch=main)](https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/actions/workflows/deployment-verification.yml)
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/14858/badge)](https://www.bestpractices.dev/projects/14858)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 This repository deploys Jellyfin (a self-hosted media server for film, television and music, with clients on every platform and no subscription attached) behind Traefik with automatic Let's Encrypt TLS, with scheduled backups of everything the server knows and a companion restore script.

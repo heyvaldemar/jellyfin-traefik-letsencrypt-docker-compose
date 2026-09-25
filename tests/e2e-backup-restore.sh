@@ -186,13 +186,16 @@ test_prune_removes_old() {
   local fake="${BACKUPS_PATH}/${DATA_BACKUP_NAME}-0000-00-00_00-00.tar.gz"
   echo "  placing a fake file dated 2020 at $fake"
   bk "cp \$(ls -1 ${BACKUPS_PATH}/${DATA_BACKUP_NAME}-*.tar.gz | head -1) ${fake} && touch -d 2020-01-01 ${fake}"
-  local elapsed=0
-  echo "  waiting up to ${CYCLE_WAIT}s for the next prune cycle..."
-  while [[ $elapsed -lt $CYCLE_WAIT ]]; do
-    bk "test ! -f ${fake}" && { echo "  the old file was pruned"; return 0; }
+  # A cycle is the archive, which takes as long as the data does, then the
+  # interval. Wait for the prune itself, with a ceiling of two cycles; the
+  # fixed wait this replaces reverted a good refresh twice on 2026-09-25.
+  local ceiling=$(( $(interval_seconds) * 2 + 300 )) elapsed=0
+  echo "  waiting up to ${ceiling}s for a prune cycle to remove it..."
+  while [[ $elapsed -lt $ceiling ]]; do
+    bk "test ! -f ${fake}" && { echo "  pruned after ${elapsed}s"; return 0; }
     sleep 5; elapsed=$((elapsed + 5))
   done
-  echo "  the old file is still there after a full cycle" >&2
+  echo "  the old file is still there after ${ceiling}s, longer than two backup cycles" >&2
   return 1
 }
 

@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(no unreleased changes yet)_
+### Added
+
+- **Traefik's timeouts also answer to the fleet-wide names.**
+  `TRAEFIK_READ_TIMEOUT`, `TRAEFIK_WRITE_TIMEOUT` and `TRAEFIK_IDLE_TIMEOUT` now
+  set the HTTPS entry point's timeouts here as in every other Traefik template
+  in the fleet. When set they win; `JELLYFIN_STREAM_TIMEOUT`, `JELLYFIN_IDLE_TIMEOUT` keep working exactly as before,
+  and a deployment that sets neither gets the same defaults.
 
 ## [1.1.8] - 2026-09-23
 

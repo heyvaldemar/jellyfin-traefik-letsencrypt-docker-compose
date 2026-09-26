@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.2.0] - 2026-09-26
+
 ### Added
 
 - **Traefik's timeouts also answer to the fleet-wide names.**
@@ -235,7 +239,8 @@ fleet standard established in
   expensive part: users, the library database with watch state, metadata,
   artwork, plugins and API keys.
 
-[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.7...HEAD
+[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.8...v1.2.0
 [1.1.7]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.5...v1.1.6
 [1.1.5]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.4...v1.1.5

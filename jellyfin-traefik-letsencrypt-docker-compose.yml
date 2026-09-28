@@ -148,9 +148,11 @@ services:
       # HTTP -> HTTPS redirect at entrypoint level
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-      # A film is one response that lasts as long as the film. The default
-      # timeouts cut a stream off mid-playback.
-      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=${TRAEFIK_READ_TIMEOUT:-${JELLYFIN_STREAM_TIMEOUT:-0s}}"
+      # readTimeout bounds the reading of a request, headers and body. It is
+      # never zero: with no ceiling, a request that announces a body and sends
+      # none holds the connection for ever (CVE-2024-28869). Streaming a film is a long response, not a long request, so Traefik's own 60 seconds is enough here.
+      # A long response is writeTimeout's business, and that stays 0.
+      - "--entrypoints.websecure.transport.respondingTimeouts.readTimeout=${TRAEFIK_READ_TIMEOUT:-${JELLYFIN_STREAM_TIMEOUT:-60s}}"
       - "--entrypoints.websecure.transport.respondingTimeouts.writeTimeout=${TRAEFIK_WRITE_TIMEOUT:-${JELLYFIN_STREAM_TIMEOUT:-0s}}"
       - "--entrypoints.websecure.transport.respondingTimeouts.idleTimeout=${TRAEFIK_IDLE_TIMEOUT:-${JELLYFIN_IDLE_TIMEOUT:-600s}}"
       # Enable the Docker provider to detect containers and their labels

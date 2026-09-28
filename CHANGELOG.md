@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.2.1] - 2026-09-28
+
 ### Security
 
 - **The HTTPS entry point's read timeout is no longer zero.** `JELLYFIN_STREAM_TIMEOUT` and
@@ -249,7 +253,8 @@ fleet standard established in
   expensive part: users, the library database with watch state, metadata,
   artwork, plugins and API keys.
 
-[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.8...v1.2.0
 [1.1.7]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.6...v1.1.7
 [1.1.6]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.1.5...v1.1.6

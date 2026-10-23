@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_(no unreleased changes yet)_
+
+## [1.2.11] - 2026-10-23
+
 ### Security
 
 - **`traefik:3.7` was rebuilt upstream**; the pin moved from `sha256:22a759fb803a…` to `sha256:c8a121e4bb13…`. Same version, same tag, a rebuilt base image — the usual shape of a security fix in a base layer.
@@ -325,7 +329,8 @@ fleet standard established in
   expensive part: users, the library database with watch state, metadata,
   artwork, plugins and API keys.
 
-[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.10...HEAD
+[Unreleased]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.11...HEAD
+[1.2.11]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.10...v1.2.11
 [1.2.10]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.9...v1.2.10
 [1.2.9]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.8...v1.2.9
 [1.2.8]: https://github.com/heyvaldemar/jellyfin-traefik-letsencrypt-docker-compose/compare/v1.2.7...v1.2.8

@@ -7,7 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_(no unreleased changes yet)_
+### Changed
+
+- **`jellyfin/jellyfin:12.3` moved to `jellyfin/jellyfin:12.4`.** The freshness check reported the lag; the deploy job booted the stack on the new image before this landed.
+
+### Security
+
+- **`traefik:3.7` was rebuilt upstream**; the pin moved from `sha256:c8a121e4bb13…` to `sha256:1336e85aaed2…`. Same version, same tag, a rebuilt base image — the usual shape of a security fix in a base layer.
+- **`python:3.13-alpine` was rebuilt upstream**; the pin moved from `sha256:bf12ecc0bea3…` to `sha256:8bcfa47b04b8…`. Same version, same tag, a rebuilt base image — the usual shape of a security fix in a base layer.
 
 ## [1.2.12] - 2026-10-23
 

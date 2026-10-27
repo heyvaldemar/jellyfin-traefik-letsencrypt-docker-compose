@@ -6,10 +6,10 @@
 # CI (Trivy scans, check-pin-freshness, the ephemeral test .env) reads
 # the pins from these lines — this block is the single source of truth.
 x-images:
-  traefik: &traefik-image ${TRAEFIK_IMAGE_TAG:-traefik:${TRAEFIK_IMAGE_VERSION:-3.7@sha256:c8a121e4bb1347e8fd52657fab12f2cb70b68f8a018895e2068f92c9e519b9c2}}
-  jellyfin: &jellyfin-image ${JELLYFIN_IMAGE_TAG:-jellyfin/jellyfin:${JELLYFIN_IMAGE_VERSION:-12.3@sha256:2038fe038ab3876a80f6e7b7e0aef6607b032c7dc0c9b3ad3296d0b2eba3bbb5}}
+  traefik: &traefik-image ${TRAEFIK_IMAGE_TAG:-traefik:${TRAEFIK_IMAGE_VERSION:-3.7@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65}}
+  jellyfin: &jellyfin-image ${JELLYFIN_IMAGE_TAG:-jellyfin/jellyfin:${JELLYFIN_IMAGE_VERSION:-12.4@sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771}}
   backups: &backups-image ${JELLYFIN_BACKUPS_IMAGE_TAG:-alpine:${JELLYFIN_BACKUPS_IMAGE_VERSION:-3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f}}
-  orphans: &orphans-image ${JELLYFIN_ORPHANS_IMAGE_TAG:-python:${JELLYFIN_ORPHANS_IMAGE_VERSION:-3.13-alpine@sha256:bf12ecc0bea3f171d55145dd02c78b5eeb09f30ee2ac9cc2b4c9e4e8f5e30741}}
+  orphans: &orphans-image ${JELLYFIN_ORPHANS_IMAGE_TAG:-python:${JELLYFIN_ORPHANS_IMAGE_VERSION:-3.13-alpine@sha256:8bcfa47b04b853a17aaf909362b847b2112fd6ec4105ea553ef9a43bafbb5916}}
 
 # One definition of where your library is mounted, used by Jellyfin and by the
 # orphan tool. The tool's whole correctness rests on comparing the path stored

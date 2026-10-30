@@ -9,7 +9,7 @@ x-images:
   traefik: &traefik-image ${TRAEFIK_IMAGE_TAG:-traefik:${TRAEFIK_IMAGE_VERSION:-3.7@sha256:1336e85aaed293bd63d005086e0dd013b04078b26aaeb1c18b26a2f928af7e65}}
   jellyfin: &jellyfin-image ${JELLYFIN_IMAGE_TAG:-jellyfin/jellyfin:${JELLYFIN_IMAGE_VERSION:-12.4@sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771}}
   backups: &backups-image ${JELLYFIN_BACKUPS_IMAGE_TAG:-alpine:${JELLYFIN_BACKUPS_IMAGE_VERSION:-3.22@sha256:2e0b81d60597f449baa56dc25d355367869d2dca4cd57e866f1e2b52af3eb55f}}
-  orphans: &orphans-image ${JELLYFIN_ORPHANS_IMAGE_TAG:-python:${JELLYFIN_ORPHANS_IMAGE_VERSION:-3.13-alpine@sha256:8bcfa47b04b853a17aaf909362b847b2112fd6ec4105ea553ef9a43bafbb5916}}
+  orphans: &orphans-image ${JELLYFIN_ORPHANS_IMAGE_TAG:-python:${JELLYFIN_ORPHANS_IMAGE_VERSION:-3.13-alpine@sha256:7984cf56ceaddebe4fefeb75d64000b9f45d8b77b11a09b24524da6cdc3af0c8}}
 
 # One definition of where your library is mounted, used by Jellyfin and by the
 # orphan tool. The tool's whole correctness rests on comparing the path stored

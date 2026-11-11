@@ -6,7 +6,7 @@
 # CI (Trivy scans, check-pin-freshness, the ephemeral test .env) reads
 # the pins from these lines — this block is the single source of truth.
 x-images:
-  traefik: &traefik-image ${TRAEFIK_IMAGE_TAG:-traefik:${TRAEFIK_IMAGE_VERSION:-3.7@sha256:f4bb143d1135a579b630ed491e17ec50f6f7c9c6a30585ff3d385471d2a86f5a}}
+  traefik: &traefik-image ${TRAEFIK_IMAGE_TAG:-traefik:${TRAEFIK_IMAGE_VERSION:-3.7@sha256:c1ea95f3b3eab04ba8868d201b8494e12284e424f7cec2127e3194bca1c6641c}}
   jellyfin: &jellyfin-image ${JELLYFIN_IMAGE_TAG:-jellyfin/jellyfin:${JELLYFIN_IMAGE_VERSION:-12.4@sha256:fea863d0cd9ec445985d9c75fc6ed64e38a1d2766cf0c250a33d553f4fc1b771}}
   backups: &backups-image ${JELLYFIN_BACKUPS_IMAGE_TAG:-alpine:${JELLYFIN_BACKUPS_IMAGE_VERSION:-3.22@sha256:bfe7ceb9f09ec0566c48fb93356e45a47a00be5a1dd14fa5b909e7709c66b034}}
   orphans: &orphans-image ${JELLYFIN_ORPHANS_IMAGE_TAG:-python:${JELLYFIN_ORPHANS_IMAGE_VERSION:-3.13-alpine@sha256:1e1f6334529d1fb26a2ef619d7cffb30a7c7d7cc1cc7338ebee283a58d1aeaca}}
